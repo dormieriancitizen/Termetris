@@ -8,26 +8,90 @@ import (
 )
 
 type Piece struct {
+	Block     Block
+	BaseShape [][]bool
+	Rotation  int8
+	X         int
+	Y         int
+}
+
+func rotateBoolArrayOnce(shape [][]bool) [][]bool {
+	sideLength := len(shape)
+
+	newShape := make([][]bool, sideLength)
+	for i := range newShape {
+		newShape[i] = make([]bool, sideLength)
+	}
+
+	for row, rowState := range shape {
+		for col, state := range rowState {
+			if !state {
+				continue
+			}
+
+			newShape[col][sideLength-1-row] = true
+		}
+	}
+
+	return newShape
+}
+
+func (p Piece) GetRotated(r int8) [][]bool {
+	// nth row becomes len-1th column
+
+	shape := p.BaseShape
+	for range r {
+		shape = rotateBoolArrayOnce(shape)
+	}
+	return shape
+}
+
+func (p Piece) GetBlocks() [][2]int {
+	shape := p.GetRotated(p.Rotation)
+	var pieceBlocks [][2]int
+
+	for row, rowState := range shape {
+		for col, active := range rowState {
+			if active {
+				pieceBlocks = append(pieceBlocks, [2]int{p.Y + row, p.X + col})
+			}
+		}
+	}
+
+	return pieceBlocks
+}
+
+type Block struct {
 	Color tcell.Color
 }
 
+var blocks = map[string]Block{
+	"I": {Color: tcell.ColorCadetBlue},
+	"L": {Color: tcell.ColorBlue},
+	"J": {Color: tcell.ColorOrange},
+	"O": {Color: tcell.ColorYellow},
+	"S": {Color: tcell.ColorGreen},
+	"T": {Color: tcell.ColorPurple},
+	"Z": {Color: tcell.ColorRed},
+}
+
 var pieces = map[string]Piece{
-	"I": Piece{Color: tcell.ColorLightCyan},
-	"L": Piece{Color: tcell.ColorBlue},
-	"J": Piece{Color: tcell.ColorOrange},
-	"O": Piece{Color: tcell.ColorYellow},
-	"S": Piece{Color: tcell.ColorGreen},
-	"T": Piece{Color: tcell.ColorPurple},
-	"Z": Piece{Color: tcell.ColorRed},
+	"I": {Block: blocks["I"], Y: -1, X: 3, Rotation: 0, BaseShape: [][]bool{
+		{false, false, false, false},
+		{true, true, true, true},
+		{false, false, false, false},
+		{false, false, false, false},
+	}},
 }
 
 type GameState struct {
-	Board [20][10]Piece
+	Board       [20][10]*Block
+	ActivePiece Piece
 }
 
 const titleHeight = 2
 
-const boardWidth = 22
+const boardWidth = 21
 const boardHeight = 21
 
 var boardCoords = [4]int{0, titleHeight + 1, boardWidth, titleHeight + 1 + boardHeight}
@@ -60,13 +124,16 @@ func main() {
 	}
 	defer quit()
 
-	gameState := GameState{}
-	gameState.Board[0][0] = pieces["L"]
+	gameState := GameState{ActivePiece: pieces["I"]}
+	// p := blocks["L"]
+	// gameState.Board[0][0] = &p
 
 	for {
 		s.Show()
 
 		ev := s.PollEvent()
+		gameState.ActivePiece.Rotation += 1
+		gameState.ActivePiece.Rotation %= 3
 		switch ev := ev.(type) {
 		case *tcell.EventResize:
 			s.Sync()
@@ -84,15 +151,30 @@ func main() {
 func drawBoard(s tcell.Screen, gameState GameState) {
 	for row, rowPieces := range gameState.Board {
 		for col, piece := range rowPieces {
-			style := tcell.StyleDefault.Foreground(piece.Color)
+			var style tcell.Style
+			if piece == nil {
+				drawOnBoard(s, row, col, ' ', tcell.StyleDefault)
+				continue
+			} else {
+				style = tcell.StyleDefault.Foreground(piece.Color)
+			}
 
-			termCol := boardCoords[0] + col*2 + 1
-			termRow := boardCoords[1] + row + 1
-
-			s.SetContent(termCol, termRow, tcell.RuneBlock, nil, style)
-			s.SetContent(termCol+1, termRow, tcell.RuneBlock, nil, style)
+			drawOnBoard(s, row, col, tcell.RuneBlock, style)
 		}
 	}
+
+	for _, coords := range gameState.ActivePiece.GetBlocks() {
+		style := tcell.StyleDefault.Foreground(gameState.ActivePiece.Block.Color)
+		drawOnBoard(s, coords[0], coords[1], tcell.RuneBlock, style)
+	}
+}
+
+func drawOnBoard(s tcell.Screen, row int, col int, char rune, style tcell.Style) {
+	termCol := boardCoords[0] + col*2 + 1
+	termRow := boardCoords[1] + row + 1
+
+	s.SetContent(termCol, termRow, char, nil, style)
+	s.SetContent(termCol+1, termRow, char, nil, style)
 }
 
 func drawBox(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style) {
@@ -112,8 +194,8 @@ func drawBox(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style) {
 
 	// Draw borders
 	for col := x1; col <= x2; col++ {
-		s.SetContent(col, y1, "|", nil, style)
-		s.SetContent(col, y2, "|", nil, style)
+		s.SetContent(col, y1, tcell.RuneHLine, nil, style)
+		s.SetContent(col, y2, tcell.RuneHLine, nil, style)
 	}
 	for row := y1 + 1; row < y2; row++ {
 		s.SetContent(x1, row, tcell.RuneVLine, nil, style)
