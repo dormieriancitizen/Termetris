@@ -279,7 +279,7 @@ func (gameState GameState) nextPiece() GameState {
 	newPiece, gameState.Bag = drawFromBag(gameState.Bag)
 
 	if len(gameState.Preview) == 0 {
-		for range 5 {
+		for range 7 {
 			var piece Piece
 			piece, gameState.Bag = drawFromBag(gameState.Bag)
 			gameState.Preview = append(gameState.Preview, piece)
@@ -574,6 +574,11 @@ func drawBoard(s tcell.Screen, gameState GameState) {
 
 	for i, piece := range gameState.Preview {
 		style := tcell.StyleDefault.Foreground(piece.Block.Color)
+
+		if i > 4 {
+			continue
+		}
+
 		for row, rowBlocks := range piece.BaseShape {
 			for col, active := range rowBlocks {
 				termCol := previewPaneCoords[0] + col*2 + 2
