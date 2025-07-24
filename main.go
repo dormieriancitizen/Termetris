@@ -519,7 +519,7 @@ func main() {
 
 			var clearedLines int
 			gameState, clearedLines = gameState.clearFilledLines()
-			gameState.Score = gameState.Level * scoreMap[clearedLines]
+			gameState.Score += gameState.Level * scoreMap[clearedLines]
 			gameState.ClearedLines += clearedLines
 			gameState.Level = (gameState.ClearedLines / 10) + 1
 
