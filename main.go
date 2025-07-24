@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -210,16 +211,19 @@ var pieces = map[string]Piece{
 }
 
 type GameState struct {
-	Board       [20][10]*Block
-	ActivePiece Piece
-	HeldPiece   *Piece
-	Frame       int64
-	HasHeld     bool
-	Lost        bool
-	LockDelay   [3]int
-	LockMove    bool
-	Bag         []string
-	Preview     []Piece
+	Board        [20][10]*Block
+	ActivePiece  Piece
+	HeldPiece    *Piece
+	Frame        int64
+	HasHeld      bool
+	Lost         bool
+	LockDelay    [3]int
+	LockMove     bool
+	Bag          []string
+	Preview      []Piece
+	Score        int
+	ClearedLines int
+	Level        int
 }
 
 func checkOverlap(board [20][10]*Block, shape [][2]int) bool {
@@ -331,6 +335,13 @@ const frameDuration = time.Second / fps
 
 var boardCoords = [4]int{0, titleHeight + 1, boardWidth, titleHeight + 1 + boardHeight}
 
+var scoreMap = map[int]int{
+	1: 100,
+	2: 300,
+	3: 500,
+	4: 800,
+}
+
 const previewPaneWidth = 10
 const previewPaneHeight = 18
 
@@ -363,7 +374,7 @@ func main() {
 	}
 	defer quit()
 
-	gameState := GameState{}
+	gameState := GameState{Level: 1}
 	gameState = gameState.nextPiece()
 	// p := blocks["L"]
 	// gameState.Board[0][0] = &p
@@ -443,7 +454,37 @@ func main() {
 
 		}
 
-		if gameState.Frame%64 == 0 {
+		var gravityTable = []int{
+			48, // Level 0
+			43,
+			38,
+			33,
+			28,
+			23,
+			18,
+			13,
+			8,
+			6,
+			5,
+			5,
+			5,
+			4,
+			4,
+			4,
+			3,
+			3,
+			3,
+			2,   // Level 19
+			1.0, // Level 20+ (instant)
+		}
+		var gravity int
+		if gameState.Level > 19 {
+			gravity = 1
+		} else {
+			gravity = gravityTable[gameState.Level]
+		}
+
+		if gameState.Frame%int64(gravity) == 0 {
 			gameState.ActivePiece, _ = gameState.ActivePiece.MoveY(gameState.Board, 1)
 		}
 
@@ -475,7 +516,12 @@ func main() {
 		// drawTextCentered(s, 0, 0, boardWidth, titleHeight, textStyle, "OVERLAP")
 		if instantLock {
 			gameState.Board = placePiece(gameState.Board, gameState.ActivePiece)
-			gameState, _ = gameState.clearFilledLines()
+
+			var clearedLines int
+			gameState, clearedLines = gameState.clearFilledLines()
+			gameState.Score = gameState.Level * scoreMap[clearedLines]
+			gameState.ClearedLines += clearedLines
+			gameState.Level = (gameState.ClearedLines / 10) + 1
 
 			gameState = gameState.nextPiece()
 		} else {
@@ -521,7 +567,8 @@ func drawBoard(s tcell.Screen, gameState GameState) {
 
 	// drawTextCentered(s, 0, 0, boardWidth, titleHeight, boxStyle, strings.Trim(strings.Join(strings.Fields(fmt.Sprint(gameState.LockDelay)), ", "), "[]"))
 	// drawTextCentered(s, 0, 0, boardWidth, titleHeight, boxStyle, strconv.Itoa(int(gameState.ActivePiece.Rotation)))
-	drawTextCentered(s, 0, 0, boardWidth, titleHeight, boxStyle, "TERMETRIS")
+	drawTextCentered(s, 0, 0, boardWidth, 1, boxStyle, "LVL "+strconv.Itoa(gameState.Level))
+	drawTextCentered(s, 0, 0, boardWidth, titleHeight, boxStyle, strconv.Itoa(gameState.Score))
 
 	drawBox(s, previewPaneCoords[0], previewPaneCoords[1], previewPaneCoords[2], previewPaneCoords[3], boxStyle)
 
