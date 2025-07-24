@@ -116,13 +116,13 @@ type Block struct {
 }
 
 var blocks = map[string]Block{
-	"I": {Color: tcell.ColorCadetBlue},
-	"L": {Color: tcell.ColorOrange},
-	"J": {Color: tcell.ColorBlue},
-	"O": {Color: tcell.ColorYellow},
-	"S": {Color: tcell.ColorGreen},
-	"T": {Color: tcell.ColorPurple},
-	"Z": {Color: tcell.ColorRed},
+	"I": {Color: tcell.NewRGBColor(129, 200, 190)},
+	"L": {Color: tcell.NewRGBColor(239, 159, 118)},
+	"J": {Color: tcell.NewRGBColor(140, 170, 238)},
+	"O": {Color: tcell.NewRGBColor(229, 200, 144)},
+	"S": {Color: tcell.NewRGBColor(166, 209, 137)},
+	"T": {Color: tcell.NewRGBColor(202, 158, 230)},
+	"Z": {Color: tcell.NewRGBColor(231, 130, 132)},
 }
 
 var JLSTZKick = map[[2]int][5][2]int{
