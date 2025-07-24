@@ -560,7 +560,7 @@ func drawBoard(s tcell.Screen, gameState GameState) {
 	}
 	for _, coords := range ghostPiece.GetBlocks() {
 		style := tcell.StyleDefault.Foreground(gameState.ActivePiece.Block.Color)
-		drawCustomOnBoard(s, coords[0], coords[1], '0', '0', style)
+		drawCustomOnBoard(s, coords[0], coords[1], '░', '░', style)
 	}
 
 	drawBox(s, 0, 0, boardWidth, titleHeight, boxStyle)
