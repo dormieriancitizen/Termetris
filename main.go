@@ -4,6 +4,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -15,6 +16,7 @@ type Piece struct {
 	Rotation  int8
 	X         int
 	Y         int
+	Kick      map[[2]int][5][2]int
 }
 
 func rotateBoolArrayOnce(shape [][]bool) [][]bool {
@@ -63,15 +65,16 @@ func (p Piece) GetBlocks() [][2]int {
 	return pieceBlocks
 }
 
-func (piece Piece) MoveX(board [20][10]*Block, offset int) Piece {
+func (piece Piece) MoveX(board [20][10]*Block, offset int) (Piece, bool) {
 	prevX := piece.X
 
 	piece.X += offset
 	if checkOverlap(board, piece.GetBlocks()) {
 		piece.X = prevX
+		return piece, true
 	}
 
-	return piece
+	return piece, false
 }
 
 func (piece Piece) MoveY(board [20][10]*Block, offset int) (Piece, bool) {
@@ -86,18 +89,26 @@ func (piece Piece) MoveY(board [20][10]*Block, offset int) (Piece, bool) {
 	return piece, false
 }
 
-func (piece Piece) Rotate(board [20][10]*Block, offset int8) Piece {
-	prevRot := piece.Rotation
-
-	piece.Rotation += offset
-	piece.Rotation = piece.Rotation % 4
-
-	if checkOverlap(board, piece.GetBlocks()) {
-		// wallkick implementation later
-		piece.Rotation = prevRot
+func (piece Piece) Rotate(board [20][10]*Block, offset int8) (Piece, bool) {
+	testPiece := piece
+	testPiece.Rotation += offset
+	testPiece.Rotation = testPiece.Rotation % 4
+	if testPiece.Rotation < 0 {
+		testPiece.Rotation += 4
 	}
 
-	return piece
+	kick_tests := piece.Kick[[2]int{int(piece.Rotation), int(testPiece.Rotation)}]
+
+	for _, test := range kick_tests {
+		testPiece.X += test[0]
+		testPiece.Y -= test[1]
+
+		if !checkOverlap(board, testPiece.GetBlocks()) {
+			return testPiece, false
+		}
+	}
+
+	return piece, true
 }
 
 type Block struct {
@@ -114,44 +125,88 @@ var blocks = map[string]Block{
 	"Z": {Color: tcell.ColorRed},
 }
 
+var JLSTZKick = map[[2]int][5][2]int{
+	{0, 1}: {{0, 0}, {-1, 0}, {-1, 1}, {0, -2}, {-1, -2}}, // 0 -> R
+	{1, 0}: {{0, 0}, {1, 0}, {1, -1}, {0, 2}, {1, 2}},     // R -> 0
+	{1, 2}: {{0, 0}, {1, 0}, {1, -1}, {0, 2}, {1, 2}},     // R -> 2
+	{2, 1}: {{0, 0}, {-1, 0}, {-1, 1}, {0, -2}, {-1, -2}}, // 2 -> R
+	{2, 3}: {{0, 0}, {1, 0}, {1, 1}, {0, -2}, {1, -2}},    // 2 -> L
+	{3, 2}: {{0, 0}, {-1, 0}, {-1, -1}, {0, 2}, {-1, 2}},  // L -> 2
+	{3, 0}: {{0, 0}, {-1, 0}, {-1, -1}, {0, 2}, {-1, 2}},  // L -> 0
+	{0, 3}: {{0, 0}, {1, 0}, {1, 1}, {0, -2}, {1, -2}},    // 0 -> L
+}
+
+var OKick = map[[2]int][5][2]int{
+	{0, 1}: {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}},
+	{1, 0}: {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}},
+	{1, 2}: {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}},
+	{2, 1}: {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}},
+	{2, 3}: {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}},
+	{3, 2}: {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}},
+	{3, 0}: {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}},
+	{0, 3}: {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}},
+}
+
+var IKick = map[[2]int][5][2]int{
+	{0, 1}: {{0, 0}, {-2, 0}, {1, 0}, {-2, -1}, {1, 2}}, // 0 -> R
+	{1, 0}: {{0, 0}, {2, 0}, {-1, 0}, {2, 1}, {-1, -2}}, // R -> 0
+	{1, 2}: {{0, 0}, {-1, 0}, {2, 0}, {-1, 2}, {2, -1}}, // R -> 2
+	{2, 1}: {{0, 0}, {1, 0}, {-2, 0}, {1, -2}, {-2, 1}}, // 2 -> R
+	{2, 3}: {{0, 0}, {2, 0}, {-1, 0}, {2, 1}, {-1, -2}}, // 2 -> L
+	{3, 2}: {{0, 0}, {-2, 0}, {1, 0}, {-2, -1}, {1, 2}}, // L -> 2
+	{3, 0}: {{0, 0}, {1, 0}, {-2, 0}, {1, -2}, {-2, 1}}, // L -> 0
+	{0, 3}: {{0, 0}, {-1, 0}, {2, 0}, {-1, 2}, {2, -1}}, // 0 -> L
+}
+
 var pieces = map[string]Piece{
-	"I": {Block: blocks["I"], Y: -1, X: 3, Rotation: 0, BaseShape: [][]bool{
-		{false, false, false, false},
-		{true, true, true, true},
-		{false, false, false, false},
-		{false, false, false, false},
-	}},
-	"L": {Block: blocks["L"], Y: -1, X: 3, Rotation: 0, BaseShape: [][]bool{
-		{false, false, true},
-		{true, true, true},
-		{false, false, false},
-	}},
-	"J": {Block: blocks["J"], Y: -1, X: 3, Rotation: 0, BaseShape: [][]bool{
-		{true, false, false},
-		{true, true, true},
-		{false, false, false},
-	}},
-	"O": {Block: blocks["O"], Y: -1, X: 3, Rotation: 0, BaseShape: [][]bool{
-		{false, false, false, false},
-		{false, true, true, false},
-		{false, true, true, false},
-		{false, false, false, false},
-	}},
-	"S": {Block: blocks["S"], Y: -1, X: 3, Rotation: 0, BaseShape: [][]bool{
-		{false, true, true},
-		{true, true, false},
-		{false, false, false},
-	}},
-	"Z": {Block: blocks["Z"], Y: -1, X: 3, Rotation: 0, BaseShape: [][]bool{
-		{true, true, false},
-		{false, true, true},
-		{false, false, false},
-	}},
-	"T": {Block: blocks["T"], Y: -1, X: 3, Rotation: 0, BaseShape: [][]bool{
-		{false, true, false},
-		{true, true, true},
-		{false, false, false},
-	}},
+	"I": {Block: blocks["I"], Y: -1, X: 3, Rotation: 0, Kick: IKick,
+		BaseShape: [][]bool{
+			{false, false, false, false},
+			{true, true, true, true},
+			{false, false, false, false},
+			{false, false, false, false},
+		},
+	},
+	"L": {Block: blocks["L"], Y: -1, X: 3, Rotation: 0, Kick: JLSTZKick,
+		BaseShape: [][]bool{
+			{false, false, true},
+			{true, true, true},
+			{false, false, false},
+		},
+	},
+	"J": {Block: blocks["J"], Y: -1, X: 3, Rotation: 0, Kick: JLSTZKick,
+		BaseShape: [][]bool{
+			{true, false, false},
+			{true, true, true},
+			{false, false, false},
+		},
+	},
+	"O": {Block: blocks["O"], Y: -1, X: 3, Rotation: 0, Kick: OKick,
+		BaseShape: [][]bool{
+			{false, false, false, false},
+			{false, true, true, false},
+			{false, true, true, false},
+			{false, false, false, false},
+		},
+	},
+	"S": {Block: blocks["S"], Y: -1, X: 3, Rotation: 0, Kick: JLSTZKick,
+		BaseShape: [][]bool{
+			{false, true, true},
+			{true, true, false},
+			{false, false, false},
+		}},
+	"Z": {Block: blocks["Z"], Y: -1, X: 3, Rotation: 0, Kick: JLSTZKick,
+		BaseShape: [][]bool{
+			{true, true, false},
+			{false, true, true},
+			{false, false, false},
+		}},
+	"T": {Block: blocks["T"], Y: -1, X: 3, Rotation: 0, Kick: JLSTZKick,
+		BaseShape: [][]bool{
+			{false, true, false},
+			{true, true, true},
+			{false, false, false},
+		}},
 }
 
 type GameState struct {
@@ -161,6 +216,10 @@ type GameState struct {
 	Frame       int64
 	HasHeld     bool
 	Lost        bool
+	LockDelay   [3]int
+	LockMove    bool
+	Bag         []string
+	Preview     []Piece
 }
 
 func checkOverlap(board [20][10]*Block, shape [][2]int) bool {
@@ -189,18 +248,44 @@ func placePiece(board [20][10]*Block, piece Piece) [20][10]*Block {
 	return board
 }
 
-func getRandomPiece() Piece {
-	keys := make([]string, 0, len(pieces))
-	for k := range pieces {
-		keys = append(keys, k)
-	}
-	randKey := keys[rand.Intn(len(keys))]
-	return pieces[randKey]
+func drawFromBag(bag []string) (Piece, []string) {
+	randIndex := rand.Intn(len(bag))
+	key := bag[randIndex]
+	bag = slices.Delete(bag, randIndex, randIndex)
+
+	return pieces[key], bag
+}
+
+func (gameState GameState) reset() GameState {
+	gameState.LockMove = false
+	gameState.HasHeld = false
+	gameState.LockDelay = defaultLockDelay
+
+	return gameState
 }
 
 func (gameState GameState) nextPiece() GameState {
-	gameState.ActivePiece = getRandomPiece()
-	gameState.HasHeld = false
+	if len(gameState.Bag) == 0 {
+		gameState.Bag = []string{"I", "O", "T", "S", "Z", "J", "L"}
+	}
+
+	gameState = gameState.reset()
+
+	var newPiece Piece
+	newPiece, gameState.Bag = drawFromBag(gameState.Bag)
+
+	if len(gameState.Preview) == 0 {
+		for range 5 {
+			var piece Piece
+			piece, gameState.Bag = drawFromBag(gameState.Bag)
+			gameState.Preview = append(gameState.Preview, piece)
+		}
+	}
+
+	gameState.ActivePiece = gameState.Preview[0]
+	gameState.Preview = slices.Delete(gameState.Preview, 0, 1)
+
+	gameState.Preview = append(gameState.Preview, newPiece)
 
 	if checkOverlap(gameState.Board, gameState.ActivePiece.GetBlocks()) {
 		gameState.Lost = true
@@ -209,7 +294,8 @@ func (gameState GameState) nextPiece() GameState {
 	return gameState
 }
 
-func (gameState GameState) clearFilledLines() GameState {
+func (gameState GameState) clearFilledLines() (GameState, int) {
+	clearedRows := 0
 	for rowIndice, row := range gameState.Board {
 		rowFull := true
 		for _, block := range row {
@@ -227,9 +313,10 @@ func (gameState GameState) clearFilledLines() GameState {
 			for col := range len(gameState.Board[0]) {
 				gameState.Board[0][col] = nil
 			}
+			clearedRows++
 		}
 	}
-	return gameState
+	return gameState, clearedRows
 }
 
 const titleHeight = 2
@@ -237,10 +324,18 @@ const titleHeight = 2
 const boardWidth = 21
 const boardHeight = 21
 
+var defaultLockDelay = [3]int{30, 120, 1200}
+
 const fps = 60
 const frameDuration = time.Second / fps
 
 var boardCoords = [4]int{0, titleHeight + 1, boardWidth, titleHeight + 1 + boardHeight}
+
+const previewPaneWidth = 10
+const previewPaneHeight = 18
+
+var previewPaneCoords = [4]int{boardWidth + 1, 0, boardWidth + 1 + previewPaneWidth, previewPaneHeight}
+var holdPaneCoords = [4]int{boardWidth + 1, titleHeight - 4 + boardHeight, boardWidth + 1 + previewPaneWidth, titleHeight + 1 + boardHeight}
 
 func main() {
 	s, err := tcell.NewScreen()
@@ -254,13 +349,11 @@ func main() {
 
 	defStyle := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	boxStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorReset)
-	textStyle := tcell.StyleDefault.Bold(true).Foreground(tcell.ColorPurple).Background(tcell.ColorReset)
 
 	s.SetStyle(defStyle)
 
 	// tetris bounding box
-	drawBox(s, 0, 0, boardWidth, titleHeight, boxStyle)
-	drawTextCentered(s, 0, 0, boardWidth, titleHeight, textStyle, "TETRIS")
+	// drawTextCentered(s, 0, 0, boardWidth, titleHeight, textStyle, "TETRIS")
 
 	drawBox(s, boardCoords[0], boardCoords[1], boardCoords[2], boardCoords[3], boxStyle)
 
@@ -288,7 +381,9 @@ func main() {
 			quit()
 		}
 
-		hitBottom := false
+		instantLock := false
+		rotated := false
+		shifted := false
 		select {
 		case ev := <-evCh:
 			if ev != nil {
@@ -300,20 +395,29 @@ func main() {
 					case tcell.KeyEscape, tcell.KeyCtrlC:
 						quit()
 					case tcell.KeyUp:
-						gameState.ActivePiece = gameState.ActivePiece.Rotate(gameState.Board, 1)
+						var b bool
+						gameState.ActivePiece, b = gameState.ActivePiece.Rotate(gameState.Board, 1)
+						rotated = !b
 					case tcell.KeyLeft:
-						gameState.ActivePiece = gameState.ActivePiece.MoveX(gameState.Board, -1)
+						var b bool
+						gameState.ActivePiece, b = gameState.ActivePiece.MoveX(gameState.Board, -1)
+						shifted = !b
 					case tcell.KeyRight:
-						gameState.ActivePiece = gameState.ActivePiece.MoveX(gameState.Board, 1)
+						var b bool
+						gameState.ActivePiece, b = gameState.ActivePiece.MoveX(gameState.Board, 1)
+						shifted = !b
 					case tcell.KeyDown:
-						gameState.ActivePiece, hitBottom = gameState.ActivePiece.MoveY(gameState.Board, 1)
+						// soft drop doesnt lock instantly
+						gameState.ActivePiece, _ = gameState.ActivePiece.MoveY(gameState.Board, 1)
 					case tcell.KeyRune:
 						switch ev.Rune() {
 						case 'z':
-							gameState.ActivePiece = gameState.ActivePiece.Rotate(gameState.Board, 3)
+							var b bool
+							gameState.ActivePiece, b = gameState.ActivePiece.Rotate(gameState.Board, 3)
+							rotated = !b
 						case ' ':
-							for !hitBottom {
-								gameState.ActivePiece, hitBottom = gameState.ActivePiece.MoveY(gameState.Board, 1)
+							for !instantLock {
+								gameState.ActivePiece, instantLock = gameState.ActivePiece.MoveY(gameState.Board, 1)
 							}
 						case 'c':
 							if gameState.HasHeld {
@@ -324,6 +428,7 @@ func main() {
 								activeCopy := gameState.ActivePiece
 
 								gameState.ActivePiece, gameState.HeldPiece = *heldCopy, &activeCopy
+								gameState = gameState.reset()
 							} else {
 								heldCopy := gameState.ActivePiece
 								gameState.HeldPiece = &heldCopy
@@ -339,17 +444,42 @@ func main() {
 		}
 
 		if gameState.Frame%64 == 0 {
-			gameState.ActivePiece, hitBottom = gameState.ActivePiece.MoveY(gameState.Board, 1)
+			gameState.ActivePiece, _ = gameState.ActivePiece.MoveY(gameState.Board, 1)
 		}
 
-		if hitBottom || checkOverlap(gameState.Board, gameState.ActivePiece.GetBlocks()) {
-			drawTextCentered(s, 0, 0, boardWidth, titleHeight, textStyle, "OVERLAP")
+		var onGround bool
+		_, onGround = gameState.ActivePiece.MoveY(gameState.Board, 1)
+
+		if onGround {
+			if shifted {
+				gameState.LockMove = true
+			}
+			if rotated {
+				gameState.LockMove = true
+				gameState.LockDelay[1] = defaultLockDelay[1]
+			}
+
+			gameState.LockDelay[2]--
+			gameState.LockDelay[0]--
+			gameState.LockDelay[1]--
+
+			if !gameState.LockMove && gameState.LockDelay[0] <= 0 {
+				instantLock = true
+			} else if gameState.LockMove && gameState.LockDelay[1] <= 0 {
+				instantLock = true
+			} else if gameState.LockDelay[2] <= 0 {
+				instantLock = true
+			}
+		}
+
+		// drawTextCentered(s, 0, 0, boardWidth, titleHeight, textStyle, "OVERLAP")
+		if instantLock {
 			gameState.Board = placePiece(gameState.Board, gameState.ActivePiece)
-			gameState = gameState.clearFilledLines()
+			gameState, _ = gameState.clearFilledLines()
 
 			gameState = gameState.nextPiece()
 		} else {
-			drawTextCentered(s, 0, 0, boardWidth, titleHeight, textStyle, "TETRIS")
+			// drawTextCentered(s, 0, 0, boardWidth, titleHeight, textStyle, "TETRIS")
 		}
 
 		drawBoard(s, gameState)
@@ -362,11 +492,12 @@ func main() {
 }
 
 func drawBoard(s tcell.Screen, gameState GameState) {
+	boxStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorReset)
 	for row, rowBlocks := range gameState.Board {
 		for col, block := range rowBlocks {
 			var style tcell.Style
 			if block == nil {
-				drawOnBoard(s, row, col, ' ', tcell.StyleDefault)
+				drawCustomOnBoard(s, row, col, ' ', '.', tcell.StyleDefault)
 				continue
 			} else {
 				style = tcell.StyleDefault.Foreground(block.Color).Background(block.Color)
@@ -376,29 +507,33 @@ func drawBoard(s tcell.Screen, gameState GameState) {
 		}
 	}
 
-	prevY := gameState.ActivePiece.Y
-
+	ghostPiece := gameState.ActivePiece
 	hitBottom := false
 	for !hitBottom {
-		gameState.ActivePiece, hitBottom = gameState.ActivePiece.MoveY(gameState.Board, 1)
+		ghostPiece, hitBottom = ghostPiece.MoveY(gameState.Board, 1)
 	}
-
-	//ghost
-	for _, coords := range gameState.ActivePiece.GetBlocks() {
+	for _, coords := range ghostPiece.GetBlocks() {
 		style := tcell.StyleDefault.Foreground(gameState.ActivePiece.Block.Color)
-		drawOnBoard(s, coords[0], coords[1], 'o', style)
+		drawCustomOnBoard(s, coords[0], coords[1], '0', '0', style)
 	}
 
-	gameState.ActivePiece.Y = prevY
+	drawBox(s, 0, 0, boardWidth, titleHeight, boxStyle)
 
-	if gameState.HeldPiece != nil {
-		style := tcell.StyleDefault.Foreground(gameState.HeldPiece.Block.Color)
-		for row, rowBlocks := range gameState.HeldPiece.BaseShape {
+	// drawTextCentered(s, 0, 0, boardWidth, titleHeight, boxStyle, strings.Trim(strings.Join(strings.Fields(fmt.Sprint(gameState.LockDelay)), ", "), "[]"))
+	// drawTextCentered(s, 0, 0, boardWidth, titleHeight, boxStyle, strconv.Itoa(int(gameState.ActivePiece.Rotation)))
+	drawTextCentered(s, 0, 0, boardWidth, titleHeight, boxStyle, "TERMETRIS")
+
+	drawBox(s, previewPaneCoords[0], previewPaneCoords[1], previewPaneCoords[2], previewPaneCoords[3], boxStyle)
+
+	for i, piece := range gameState.Preview {
+		style := tcell.StyleDefault.Foreground(piece.Block.Color)
+		for row, rowBlocks := range piece.BaseShape {
 			for col, active := range rowBlocks {
-				termCol := boardCoords[2] + col*2 + 1
-				termRow := boardCoords[0] + row + 1
+				termCol := previewPaneCoords[0] + col*2 + 2
+				termRow := previewPaneCoords[1] + row + 1 + i*3
 				if !active {
 					s.SetContent(termCol, termRow, ' ', nil, tcell.StyleDefault)
+					s.SetContent(termCol+1, termRow, ' ', nil, tcell.StyleDefault)
 					continue
 				}
 
@@ -408,10 +543,41 @@ func drawBoard(s tcell.Screen, gameState GameState) {
 		}
 	}
 
+	drawText(s, previewPaneCoords[0]+1, previewPaneCoords[1], previewPaneCoords[2], previewPaneCoords[0]+1, boxStyle, "PREVIEW")
+
+	drawBox(s, holdPaneCoords[0], holdPaneCoords[1], holdPaneCoords[2], holdPaneCoords[3], boxStyle)
+
+	if gameState.HeldPiece != nil {
+		style := tcell.StyleDefault.Foreground(gameState.HeldPiece.Block.Color)
+		for row, rowBlocks := range gameState.HeldPiece.BaseShape {
+			for col, active := range rowBlocks {
+				termCol := holdPaneCoords[0] + col*2 + 2
+				termRow := holdPaneCoords[1] + row + 1
+				if !active {
+					s.SetContent(termCol, termRow, ' ', nil, tcell.StyleDefault)
+					s.SetContent(termCol+1, termRow, ' ', nil, tcell.StyleDefault)
+					continue
+				}
+
+				s.SetContent(termCol, termRow, tcell.RuneBlock, nil, style)
+				s.SetContent(termCol+1, termRow, tcell.RuneBlock, nil, style)
+			}
+		}
+
+	}
+
+	holdTitleStyle := tcell.StyleDefault.Bold(true)
+	if gameState.HasHeld {
+		holdTitleStyle = holdTitleStyle.Bold(false)
+
+	}
+	drawText(s, holdPaneCoords[0]+1, holdPaneCoords[1], holdPaneCoords[2], holdPaneCoords[0]+1, holdTitleStyle, "HOLD")
+
 	for _, coords := range gameState.ActivePiece.GetBlocks() {
 		style := tcell.StyleDefault.Foreground(gameState.ActivePiece.Block.Color)
 		drawOnBoard(s, coords[0], coords[1], tcell.RuneBlock, style)
 	}
+
 }
 
 func drawOnBoard(s tcell.Screen, row int, col int, char rune, style tcell.Style) {
@@ -424,6 +590,18 @@ func drawOnBoard(s tcell.Screen, row int, col int, char rune, style tcell.Style)
 
 	s.SetContent(termCol, termRow, char, nil, style)
 	s.SetContent(termCol+1, termRow, char, nil, style)
+}
+
+func drawCustomOnBoard(s tcell.Screen, row int, col int, char rune, char2 rune, style tcell.Style) {
+	if row >= 20 || col >= 10 || row < 0 || col < 0 {
+		return
+	}
+
+	termCol := boardCoords[0] + col*2 + 1
+	termRow := boardCoords[1] + row + 1
+
+	s.SetContent(termCol, termRow, char, nil, style)
+	s.SetContent(termCol+1, termRow, char2, nil, style)
 }
 
 func drawBox(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style) {
